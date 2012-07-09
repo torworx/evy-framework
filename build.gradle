@@ -1,0 +1,224 @@
+configure(allprojects) {
+	apply plugin: 'java'
+	apply plugin: 'eclipse'
+	apply plugin: 'idea'
+
+	group = 'evyframework'
+
+	sourceCompatibility=1.6
+	targetCompatibility=1.6
+	
+	ext.guavaVersion='12.0'
+	ext.slf4jVersion='1.6.5'
+	ext.springVersion='3.1.1.RELEASE'
+
+	[compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
+	[compileJava, compileTestJava]*.options*.compilerArgs = ['-Xlint:none']
+	
+	sourceSets {
+		main {
+			java {
+				srcDir 'src/main/java'
+			}
+			resources {
+				srcDir 'src/main/resources'
+			}
+			output.resourcesDir = 'target/classes'
+    		output.classesDir   = 'target/classes'
+		}
+		test {
+			java {
+				srcDir 'src/test/java'
+			}
+			resources {
+				srcDir 'src/test/resources'
+			}
+			output.resourcesDir = 'target/test-classes'
+    		output.classesDir   = 'target/test-classes'
+		}
+	}
+	
+	configurations {
+		all*.exclude module: 'commons-logging'
+	}
+
+	repositories {
+		mavenLocal()
+		mavenCentral()
+	}
+
+	dependencies { 
+		testCompile 'junit:junit:4.10'
+		testCompile 'org.mockito:mockito-all:1.9.0'
+	}
+}
+
+
+buildscript {
+	repositories {
+		mavenLocal()
+		mavenCentral()
+	}
+	dependencies {
+		classpath 'org.hibernate.build.gradle:gradle-upload-auth-plugin:1.1.1'
+	}
+}
+
+configure(subprojects) { subproject ->
+	apply plugin: 'java'
+	apply plugin: 'maven' // for install task as well as deploy dependencies
+	apply plugin: 'uploadAuth'
+	
+	apply from: "${rootProject.projectDir}/maven.gradle"
+	
+	configurations {
+		deployerJars {
+			description = 'Jars needed for doing deployment to Nexus repo'
+		}
+	}
+	dependencies {
+		deployerJars "org.apache.maven.wagon:wagon-http:2.2"
+	}
+
+	jar {
+		manifest.attributes['Implementation-Title'] = subproject.name
+		manifest.attributes['Implementation-Version'] = subproject.version
+
+		from("${rootProject.projectDir}/src/dist") {
+			include "license.txt"
+			include "notice.txt"
+			into "META-INF"
+			expand(copyright: new Date().format('yyyy'), version: project.version)
+		}
+	}
+	
+	uploadArchives {
+		repositories.mavenDeployer {
+			name = 'evyDeployer'
+			configuration = configurations.deployerJars
+			repository(id: "releases-repository", url: "http://maven.leadingsoft.com.cn/content/repositories/releases")
+			snapshotRepository(id: "snapshots-repository", url: "http://maven.leadingsoft.com.cn/content/repositories/snapshots")
+		}
+	}
+
+	task sourcesJar(type: Jar, dependsOn:classes) {
+		classifier = 'sources'
+		from sourceSets.main.allJava
+	}
+
+	artifacts {
+		archives sourcesJar
+	}
+	
+	uploadArchives.dependsOn sourcesJar
+}
+
+
+project("evy-asm") {
+	description = 'Evy ASM'
+	ext.asmVersion = '4.0'
+
+	configurations {
+		asm
+		jarjar
+	}
+	dependencies {
+		asm "org.ow2.asm:asm:${asmVersion}@jar"
+		jarjar 'com.googlecode.jarjar:jarjar:1.3'
+	}
+
+	task repackageAsm(type: Jar) { jar ->
+		jar.baseName = "asm-repack"
+		jar.version = asmVersion
+
+		doLast() {
+			project.ant {
+				taskdef name: "jarjar", classname: "com.tonicsystems.jarjar.JarJarTask",
+						classpath: configurations.jarjar.asPath
+				jarjar(destfile: archivePath, index: "true", filesetmanifest: "merge") {
+					configurations.asm.each { jarfile ->
+						zipfileset(src: jarfile)
+					}
+					rule(pattern: 'org.objectweb.asm.**', result: 'evyframework.asm.@1')
+				}
+			}
+		}
+	}
+
+	jar {
+		dependsOn repackageAsm
+		from(zipTree(repackageAsm.archivePath)) { exclude 'META-INF/INDEX.LIST' }
+	}
+}
+
+project('evy-common') {
+	description = 'Evy Common'
+
+	dependencies {
+		compile "org.slf4j:slf4j-api:${slf4jVersion}"
+		testCompile "com.google.guava:guava:${guavaVersion}"
+	}
+}
+
+project('evy-container') {
+	description = 'Evy Container'
+	dependencies {
+		compile project(':evy-common')
+		compile "com.google.guava:guava:${guavaVersion}"
+		compile "org.slf4j:slf4j-api:${slf4jVersion}"
+		testCompile "com.google.inject:guice:3.0"
+		testCompile "org.springframework:spring-context:${springVersion}"
+		testCompile "org.slf4j:jcl-over-slf4j:${slf4jVersion}"
+	}
+}
+
+project('evy-di') {
+	description = 'Evy DI'
+}
+
+project('evy-pool') { description = 'Evy Pool' }
+
+
+project('evy-crypto') { description = 'Evy Crypto' }
+
+project('evy-reflectasm') {
+	description = 'Evy Reflect'
+
+	dependencies {
+		// depend on evy-asm project in order to have it show up as a
+		// <dependency> in the generated pom
+		compile (project(":evy-asm"), optional)
+		compile files(project(":evy-asm").jar.archivePath) {
+			builtBy project(":evy-asm").jar
+		}
+	}
+}
+/*
+project('evy-oxm') {
+	description = 'Evy OXM'
+	
+	dependencies {
+		compile "com.google.guava:guava:${guavaVersion}"
+		compile "org.slf4j:slf4j-api:${slf4jVersion}"
+		compile (project(":evy-common"))
+		compile("com.thoughtworks.xstream:xstream:1.4.2", optional)
+		compile("org.springframework:spring-context:${springVersion}", optional)
+		testCompile "org.apache.commons:commons-lang3:3.1"
+		testCompile "org.springframework:spring-test:${springVersion}"
+		testCompile 'org.codehaus.jettison:jettison:1.3.1'
+		testCompile "xmlunit:xmlunit:1.3"
+		testCompile 'xmlpull:xmlpull:1.1.3.4a'
+	}
+}
+*/
+configure(rootProject) {
+	description = 'Evy Framework'
+
+	// don't publish the default jar for the root project
+	configurations.archives.artifacts.clear()
+
+	task wrapper(type: Wrapper) {
+		description = 'Generates gradlew[.bat] scripts'
+		gradleVersion = '1.0'
+	}
+}

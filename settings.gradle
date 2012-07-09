@@ -1,0 +1,10 @@
+rootProject.name = 'evy'
+
+include 'evy-common'
+include 'evy-asm'
+include 'evy-container'
+include 'evy-di'
+include 'evy-pool'
+include 'evy-reflectasm'
+include 'evy-crypto'
+//include 'evy-oxm'

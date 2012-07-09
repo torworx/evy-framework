@@ -1,0 +1,32 @@
+// Simple bar
+bar = * evyframework.container.benchmark.models.Bar();
+soo = * evyframework.container.benchmark.models.Soo().setBar(bar);
+ssoo = 1 evyframework.container.benchmark.models.Soo().setBar(bar);
+
+foo = * evyframework.container.benchmark.models.FooImpl(bar);
+fooInterceptor = evyframework.container.interceptor.FooInterceptor();
+statefulBarInterceptor = * evyframework.container.interceptor.ConcretBarInterceptorA();
+fooAdvisor = org.springframework.aop.support.RegexpMethodPointcutAdvisor();
+	config {
+		$fooAdvisor.setAdvice(fooInterceptor);
+		$fooAdvisor.setPatterns([".*.noop"]);
+	}
+	
+fooProxy = org.springframework.aop.framework.ProxyFactoryBean();
+	config {
+		$fooProxy.setProxyInterfaces(["evyframework.container.benchmark.models.Foo"]);
+		$fooProxy.setTarget(foo);
+		$fooProxy.setProxyTargetClass("true");
+		$fooProxy.setOptimize("true");
+		$fooProxy.setFrozen("true");
+		$fooProxy.setInterceptorNames([fooAdvisor]);
+	}
+	
+sooProxy = org.springframework.aop.framework.ProxyFactoryBean();
+	config {
+		$sooProxy.setSingleton("false");
+		$sooProxy.setTarget(soo);
+		$sooProxy.setProxyTargetClass("true");
+		$sooProxy.setFrozen("true");
+		$sooProxy.setInterceptorNames(["fooAdvisor"]);
+	}
